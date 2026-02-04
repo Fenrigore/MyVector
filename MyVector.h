@@ -3,7 +3,8 @@
 #include <cstdlib>
 #include <new>
 #include <utility>
-
+#include <memory>
+#include <type_traits>
 
 template <typename T>
 class RawMemory {
@@ -76,21 +77,10 @@ public:
 
 	//Конструктор вектора размером size с нулевыми значениями T
 	explicit Vector(size_t size) 
-		:data_(size)
+		: data_(size)
 		, size_(size) {
-		size_t i{};
-		try {
-			for (; i != size; ++i) {
-				new (data_ + i) T();
-			}
-		}
-		catch (...) {
-			// i хранит количество созданных объектов
-			//теперь их надо уничтожить
-			DestroyN(data_.GetAdress(), i);
-			//перевыбрасываем исключение
-			throw;
-		}
+		//заполняем с помощью value-инициализации
+		std::uninitialized_value_construct_n(data_.GetAdress(), size_);	
 	}
 
 	//конструктор копирования
@@ -98,25 +88,15 @@ public:
 		//забронировать память размером как в other.size_
 		:data_(other.size_)
 		, size_(other.size_){
-		
-		//логика выбрасывания исключения такая же как и в конструкторе с size
-		size_t i{};
-		try {
-			//скопировать в ячейку data_ + i объект из other.data_ по индексу i
-			for (; i < size_; ++i) {
-				CopyConstruct((data_.GetAdress() + i), other.data_[i]);
-				//попробовать CopyConstruct(data_[i], other.data_[i]);
-			}
-		}
-		catch (...) {
-			DestroyN(data_.GetAdress(), i);
-			throw;
-		}
+		//копирование из other по кол-ву элементов
+		std::uninitialized_copy_n(other.data_.GetAdress(), size_, data_.GetAdress());
+
 	}
 
 	//Деструктор 
 	~Vector() {
-		DestroyN(data_.GetAdress(), size_);
+		//стандартная функция удаления из памяти
+		std::destroy_n(data_.GetAdress(), size_);
 	}
 
 	void Reserve(size_t new_capacity) {
@@ -125,23 +105,24 @@ public:
 		}
 		RawMemory<T> new_data (new_capacity); //Если выбросит исключение то MyVector не изменится
 
-		//а тут как в конструкторе копирования
-		size_t i{};
-		try {
-			for (; i != size_; ++i) {
-				CopyConstruct(new_data.GetAdress() + i, data_[i]);
-			}
+		//Перемещайте элементы, только если соблюдается хотя бы одно из условий:
+		// - конструктор перемещения типа T не выбрасывает исключений;
+		// - тип T не имеет копирующего конструктора.
+
+		//Шаблоны std::is_copy_constructible_v и std::is_nothrow_move_constructible_v 
+		//помогают узнать, есть ли у типа копирующий конструктор и noexcept - конструктор 
+		//перемещения.Выполняются эти шаблоны во время компиляции
+		if constexpr (!std::is_copy_constructible_v<T> || std::is_nothrow_move_constructible_v<T>) {
+			std::uninitialized_move_n(data_.GetAdress(), size_, new_data.GetAdress());
 		}
-		catch (...) {
-			//тут уже уничтожаем во временной выделенной памяти
-			DestroyN(new_data.GetAdress(), i);
-			throw;
+		else {
+			std::uninitialized_copy_n(data_.GetAdress(), size_, new_data.GetAdress());
 		}
-		//если было брошено исключение то код ниже не отработает уже
+
 		//затем свапаем через метод RawData
 		data_.Swap(new_data);
 		//и избавляемся от улик
-		DestroyN(new_data.GetAdress(), size_);
+		std::destroy_n(new_data.GetAdress(), size_);
 	}
 
 	size_t Size() noexcept {
@@ -159,23 +140,6 @@ public:
 	T& operator [](size_t index) noexcept {
 		assert(index < size_);
 		return data_[index];
-	}
-private: // приватные методы
-	//Вызывает деструкторы n объектов массива по адресу buf
-	static void DestroyN(T* buf, size_t n) noexcept {
-		for (size_t i = 0; i < n; ++i) {
-			Destroy(buf + i);
-		}
-	}
-
-	// Создаёт копию объекта elem в сырой памяти по адресу buf
-	static void CopyConstruct(T* buf, const T& elem) {
-		new(buf) T(elem);
-	}
-
-	//вызывает деструктор объекта по адресу buf
-	static void Destroy(T* buf) noexcept {
-		buf->~T();
 	}
 
 private: //приватные поля
