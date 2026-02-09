@@ -200,6 +200,85 @@ public:
 		std::destroy_n(new_data.GetAdress(), size_);
 	}
 
+	void Resize(size_t new_size) {
+		//если уменьшаем
+		if (new_size < size_) {
+			//то удаляем элементы, у которых позиция больше нового размера
+			for (size_t i = new_size; i < size_; ++i) {
+				(data_.GetAdress() + i)->~T();
+			}
+		}//если увеличиваем
+		else if (new_size > size_) {
+			//бронируем больше памяти, если надо
+			Reserve(new_size);
+			//инициализируем новые объекты (T{})
+			std::uninitialized_value_construct_n((data_.GetAdress() + size_), new_size - size_);
+		}
+		size_ = new_size;
+	}
+
+
+	void PushBack(const T& value) {
+		if (size_ == Capacity()) {
+			RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2);
+			std::construct_at((new_data.GetAdress() + size_), value);
+			try {
+				if constexpr (!std::is_copy_constructible_v<T> || std::is_nothrow_move_constructible_v<T>) {
+					std::uninitialized_move_n(data_.GetAdress(), size_, new_data.GetAdress());
+				}
+				else {
+					std::uninitialized_copy_n(data_.GetAdress(), size_, new_data.GetAdress());
+				}
+			}
+			catch (...) {
+				std::destroy_at((new_data.GetAdress() + size_));
+				throw;
+			}
+
+			data_.Swap(new_data);
+			std::destroy_n(new_data.GetAdress(), size_);
+		}
+		else {
+			std::construct_at((data_.GetAdress() + size_), value);
+		}
+		++size_;
+	}
+
+
+
+	void PushBack(T&& value) {
+		if (size_ == Capacity()) {
+			RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2);
+			std::construct_at((new_data.GetAdress() + size_), std::move(value));
+			try {
+				if constexpr (!std::is_copy_constructible_v<T> || std::is_nothrow_move_constructible_v<T>) {
+					std::uninitialized_move_n(data_.GetAdress(), size_, new_data.GetAdress());
+				}
+				else {
+					std::uninitialized_copy_n(data_.GetAdress(), size_, new_data.GetAdress());
+				}
+			}
+			catch (...) {
+				std::destroy_at((new_data.GetAdress() + size_));
+				throw;
+			}
+
+			data_.Swap(new_data);
+			std::destroy_n(new_data.GetAdress(), size_);
+		}
+		else {
+			std::construct_at((data_.GetAdress() + size_), std::move(value));
+		}
+		++size_;
+	}
+
+
+
+	void PopBack() noexcept {
+		--size_;
+		std::destroy_at(data_.GetAdress() + size_);
+	}
+
 	size_t Size() noexcept {
 		return size_;
 	}
