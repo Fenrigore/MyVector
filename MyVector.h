@@ -5,6 +5,7 @@
 #include <utility>
 #include <memory>
 #include <type_traits>
+#include <algorithm>
 
 template <typename T>
 class RawMemory {
@@ -94,6 +95,10 @@ private: //поля
 template <typename T>
 class Vector {
 public:
+
+	using iterator = T*;
+	using const_iterator = const T*;
+
 	//Конструктор по умолчанию
 	Vector() = default;
 
@@ -272,6 +277,67 @@ public:
 		++size_;
 	}
 
+	template <typename... Types>
+	T& EmplaceBack(Types&&... args) {
+		if (size_ == Capacity()) {
+			RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2);
+			std::construct_at((new_data.GetAdress() + size_), std::forward<Types>(args)...);
+			try {
+				if constexpr (!std::is_copy_constructible_v<T> || std::is_nothrow_move_constructible_v<T>) {
+					std::uninitialized_move_n(data_.GetAdress(), size_, new_data.GetAdress());
+				}
+				else {
+					std::uninitialized_copy_n(data_.GetAdress(), size_, new_data.GetAdress());
+				}
+			}
+			catch (...) {
+				std::destroy_at(new_data.GetAdress() + size_);
+				throw;
+			}
+
+			data_.Swap(new_data);
+			std::destroy_n(new_data.GetAdress(), size_);
+		}
+		else {
+			std::construct_at((data_.GetAdress() + size_), std::forward<Types>(args)...);
+		}
+		++size_;
+		return *(data_.GetAdress() + size_ - 1);
+	}
+
+	iterator Insert(const_iterator pos, const T& value) {
+		//копирую объект
+		T temp_val = value;
+		//сохраняю неконстантную копию итератора 
+		// (мне же надо как то на его месте поменять значение)
+		auto iter = const_cast<T*>(pos);
+
+		//перемещаю либо копирую значение последнего элемента вектора
+		try {
+			if constexpr (!std::is_copy_constructible_v<T> || std::is_nothrow_move_constructible_v<T>) {
+				std::uninitialized_move_n(end() - 1, 1, end());
+			}
+			else {
+				std::uninitialized_copy_n(end() - 1, 1, end());
+			}
+		}
+		catch (...) {
+			std::destroy_at(end());
+			throw;
+		}
+		//дальше перемещаю все элементы (которые надо) вправо
+		//от first, ДО last, ДО d_last!!!!!!! d_last это как end(), вставка закончится ДО НЕГО
+		std::move_backward(iter, end() - 1, end());
+		//передаю в позицию значение
+		*iter = value;
+		//увеличиваю размер
+		++size_;
+		return iter;
+	}
+
+	//iterator Insert(const_iterator pos, T&& value) {
+
+	//}
 
 
 	void PopBack() noexcept {
@@ -294,6 +360,30 @@ public:
 	T& operator [](size_t index) noexcept {
 		assert(index < size_);
 		return data_[index];
+	}
+
+	iterator begin() noexcept {
+		return data_.GetAdress();
+	}
+
+	iterator end() noexcept {
+		return data_.GetAdress() + size_;
+	}
+
+	const_iterator begin() const noexcept {
+		return data_.GetAdress();
+	}
+
+	const_iterator end() const noexcept {
+		return data_.GetAdress() + size_;
+	}
+
+	const_iterator cbegin()const noexcept {
+		return data_.GetAdress();
+	}
+
+	const_iterator cend()const noexcept {
+		return data_.GetAdress() + size_;
 	}
 
 private: //приватные поля
