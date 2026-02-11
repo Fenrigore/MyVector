@@ -422,14 +422,20 @@ void Test6() {
         assert(v.cend() == cv.end());
     }
     {
+        //std::cout << "copies before reset= " << Obj::num_copied << std::endl;
         Obj::ResetCounters();
+        //std::cout << "copies after reset = " << Obj::num_copied << std::endl;
         Vector<Obj> v{ SIZE };
+        //std::cout << "Копий после создания вектора= " << Obj::num_copied << std::endl;
         Obj obj{ 1 };
+        //std::cout << "после создания объекта = " << Obj::num_copied << std::endl;
         Vector<Obj>::iterator pos = v.Insert(v.cbegin() + 1, obj);
+       // std::cout << "после инсерта  = " << Obj::num_copied << std::endl;
         assert(v.Size() == SIZE + 1);
         assert(v.Capacity() == SIZE * 2);
         assert(&*pos == &v[1]);
         assert(v[1].id == obj.id);
+        //std::cout << "copies = " << Obj::num_copied << std::endl;
         assert(Obj::num_copied == 1);
         assert(Obj::num_default_constructed == SIZE);
         assert(Obj::GetAliveObjectCount() == SIZE + 2);
@@ -546,21 +552,21 @@ void Test6() {
         assert(Obj::num_move_assigned == SIZE - 3);
         assert(Obj::num_assigned == 0);
     }
-    //{
-    //    Obj::ResetCounters();
-    //    Vector<Obj> v{ SIZE };
-    //    v[2].id = ID;
-    //    auto* pos = v.Erase(v.cbegin() + 1);
-    //    assert((pos - v.begin()) == 1);
-    //    assert(v.Size() == SIZE - 1);
-    //    assert(v.Capacity() == SIZE);
-    //    assert(pos->id == ID);
-    //    assert(Obj::num_copied == 0);
-    //    assert(Obj::num_assigned == 0);
-    //    assert(Obj::num_move_assigned == SIZE - 2);
-    //    assert(Obj::num_moved == 0);
-    //    assert(Obj::GetAliveObjectCount() == SIZE - 1);
-    //}
+    {
+        Obj::ResetCounters();
+        Vector<Obj> v{ SIZE };
+        v[2].id = ID;
+        auto* pos = v.Erase(v.cbegin() + 1);
+        assert((pos - v.begin()) == 1);
+        assert(v.Size() == SIZE - 1);
+        assert(v.Capacity() == SIZE);
+        assert(pos->id == ID);
+        assert(Obj::num_copied == 0);
+        assert(Obj::num_assigned == 0);
+        assert(Obj::num_move_assigned == SIZE - 2);
+        assert(Obj::num_moved == 0);
+        assert(Obj::GetAliveObjectCount() == SIZE - 1);
+    }
 }
 
 struct C {
@@ -653,7 +659,7 @@ int main() {
         Test3();
         Test4();
         Test5();
-        //Test6();
+        Test6();
         Benchmark();
     }
     catch (const std::exception& e) {
