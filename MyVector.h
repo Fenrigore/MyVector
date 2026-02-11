@@ -344,7 +344,6 @@ public:
 		std::move(iter + 1, end(), iter);
 		--size_;
 		std::destroy_at(end());
-		std::cout << "Проверка" << std::endl;
 		return iter;
 	}
 
