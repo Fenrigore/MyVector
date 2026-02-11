@@ -7,6 +7,8 @@
 #include <type_traits>
 #include <algorithm>
 
+#include <iostream>
+
 template <typename T>
 class RawMemory {
 public:
@@ -306,38 +308,172 @@ public:
 	}
 
 	iterator Insert(const_iterator pos, const T& value) {
+
 		//копирую объект
 		T temp_val = value;
 		//сохраняю неконстантную копию итератора 
 		// (мне же надо как то на его месте поменять значение)
-		auto iter = const_cast<T*>(pos);
+		T* iter = const_cast<T*>(pos);
 
-		//перемещаю либо копирую значение последнего элемента вектора
-		try {
-			if constexpr (!std::is_copy_constructible_v<T> || std::is_nothrow_move_constructible_v<T>) {
-				std::uninitialized_move_n(end() - 1, 1, end());
+		//если места недостаточно
+		if (size_ == Capacity()) {
+			//выделяю новую память
+
+			RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2);
+			//чтобы получить место вставки в новой области памяти, 
+			//надо найти отступ pos от begin() и с таким же отступом 
+			//вставить в new_data  
+			size_t index_from_pos = static_cast<size_t>(pos - begin());
+			//std::cout << "index_from_pos = " << index_from_pos << std::endl;
+			iter = new_data.GetAdress() + index_from_pos;
+			//копирую в новую память
+			//тут если что автоматически при неудаче удалится объект и бросится исключение
+			//а RawMemory сам удалит память
+			std::construct_at(iter, temp_val);
+
+			try {
+				//копирую элементы до pos
+				std::uninitialized_copy(begin(), const_cast<T*>(pos), new_data.GetAdress());
+				//и после pos
+				std::uninitialized_copy(const_cast<T*>(pos), end(), iter + 1);
 			}
-			else {
-				std::uninitialized_copy_n(end() - 1, 1, end());
+			catch (...) {
+				std::destroy_at(iter);
+				throw;
 			}
+			data_.Swap(new_data);
+			std::destroy_n(new_data.GetAdress(), size_);
+
+		}//если места достаточно
+		else {
+
+			//копирую значение последнего элемента вектора (потому что принимаю по константной ссылке
+			//Тут трай кэтч не нужен, в сырой памяти ничего не создавал.
+			std::uninitialized_copy_n(end() - 1, 1, end());
+
+			//дальше перемещаю все элементы (которые надо) вправо
+			//от first, ДО last, ДО d_last!!!!!!! d_last это как end(), вставка закончится ДО НЕГО
+			std::move_backward(iter, end() - 1, end());
+			//передаю в позицию значение
+			*iter = temp_val;
 		}
-		catch (...) {
-			std::destroy_at(end());
-			throw;
-		}
-		//дальше перемещаю все элементы (которые надо) вправо
-		//от first, ДО last, ДО d_last!!!!!!! d_last это как end(), вставка закончится ДО НЕГО
-		std::move_backward(iter, end() - 1, end());
-		//передаю в позицию значение
-		*iter = value;
 		//увеличиваю размер
 		++size_;
 		return iter;
 	}
 
-	//iterator Insert(const_iterator pos, T&& value) {
+	iterator Insert(const_iterator pos, T&& value) {
+		T temp_val = value;
+		//сохраняю неконстантную копию итератора 
+		// (мне же надо как то на его месте поменять значение)
+		T* iter = const_cast<T*>(pos);
 
-	//}
+		//если места недостаточно
+		if (size_ == Capacity()) {
+			//выделяю новую память
+
+			RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2);
+			//чтобы получить место вставки в новой области памяти, 
+			//надо найти отступ pos от begin() и с таким же отступом 
+			//вставить в new_data  
+			size_t index_from_pos = static_cast<size_t>(pos - begin());
+			//std::cout << "index_from_pos = " << index_from_pos << std::endl;
+			iter = new_data.GetAdress() + index_from_pos;
+			//копирую в новую память
+			//тут если что автоматически при неудаче удалится объект и бросится исключение
+			//а RawMemory сам удалит память
+			std::construct_at(iter, std::move(temp_val));
+			try {
+				//копирую элементы до pos
+				std::uninitialized_move(begin(), const_cast<T*>(pos), new_data.GetAdress());
+				//и после pos
+				std::uninitialized_move(const_cast<T*>(pos), end(), iter + 1);
+			}
+			catch (...) {
+				std::destroy_at(iter);
+				throw;
+			}
+			data_.Swap(new_data);
+			std::destroy_n(new_data.GetAdress(), size_);
+
+		}//если места достаточно
+		else {
+
+			//копирую значение последнего элемента вектора (потому что принимаю по константной ссылке
+			//Тут трай кэтч не нужен, в сырой памяти ничего не создавал.
+			std::uninitialized_copy_n(end() - 1, 1, end());
+
+			//дальше перемещаю все элементы (которые надо) вправо
+			//от first, ДО last, ДО d_last!!!!!!! d_last это как end(), вставка закончится ДО НЕГО
+			std::move_backward(iter, end() - 1, end());
+			//передаю в позицию значение
+			*iter = std::move(temp_val);
+		}
+		//увеличиваю размер
+		++size_;
+		return iter;
+	}
+
+	template <typename... Args>
+	iterator Emplace(const_iterator pos, Args&&... args) {
+		T temp_val(args...);
+		//сохраняю неконстантную копию итератора 
+		// (мне же надо как то на его месте поменять значение)
+		T* iter = const_cast<T*>(pos);
+
+		//если места недостаточно
+		if (size_ == Capacity()) {
+			//выделяю новую память
+
+			RawMemory<T> new_data(size_ == 0 ? 1 : size_ * 2);
+			//чтобы получить место вставки в новой области памяти, 
+			//надо найти отступ pos от begin() и с таким же отступом 
+			//вставить в new_data  
+			size_t index_from_pos = static_cast<size_t>(pos - begin());
+			//std::cout << "index_from_pos = " << index_from_pos << std::endl;
+			iter = new_data.GetAdress() + index_from_pos;
+			//копирую в новую память
+			//тут если что автоматически при неудаче удалится объект и бросится исключение
+			//а RawMemory сам удалит память
+			std::construct_at(iter, std::forward<Args>(args)...);
+			try {
+				if constexpr (!std::is_copy_constructible_v<T> || std::is_nothrow_move_constructible_v<T>) {
+					//перемещаю элементы до pos
+					std::uninitialized_move(begin(), const_cast<T*>(pos), new_data.GetAdress());
+					//и после pos
+					std::uninitialized_move(const_cast<T*>(pos), end(), iter + 1);
+				}
+				else {
+					//копирую элементы до pos
+					std::uninitialized_copy(begin(), const_cast<T*>(pos), new_data.GetAdress());
+					//и после pos
+					std::uninitialized_copy(const_cast<T*>(pos), end(), iter + 1);
+				}
+			}
+			catch (...) {
+				std::destroy_at(iter);
+				throw;
+			}
+			data_.Swap(new_data);
+			std::destroy_n(new_data.GetAdress(), size_);
+
+		}//если места достаточно
+		else {
+
+			//копирую значение последнего элемента вектора (потому что принимаю по константной ссылке
+			//Тут трай кэтч не нужен, в сырой памяти ничего не создавал.
+			std::uninitialized_copy_n(end() - 1, 1, end());
+
+			//дальше перемещаю все элементы (которые надо) вправо
+			//от first, ДО last, ДО d_last!!!!!!! d_last это как end(), вставка закончится ДО НЕГО
+			std::move_backward(iter, end() - 1, end());
+			//передаю в позицию значение
+			*iter = std::move(temp_val);
+		}
+		//увеличиваю размер
+		++size_;
+		return iter;
+	}
 
 
 	void PopBack() noexcept {
